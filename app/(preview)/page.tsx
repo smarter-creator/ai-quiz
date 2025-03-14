@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 import { experimental_useObject } from "ai/react";
-import { questionsSchema } from "@/lib/schemas";
+import * as Tabs from "@radix-ui/react-tabs";
+import {
+  flashcardSchemaList,
+  matchingPairSchemaList,
+  questionsSchema,
+} from "@/lib/schemas";
 import { z } from "zod";
 import { toast } from "sonner";
 import { FileUp, Plus, Loader2 } from "lucide-react";
@@ -22,14 +27,30 @@ import NextLink from "next/link";
 import { generateQuizTitle } from "./actions";
 import { AnimatePresence, motion } from "framer-motion";
 import { VercelIcon, GitIcon } from "@/components/icons";
+import Flashcards from "@/components/Flashcards";
+import MatchingGame from "@/components/MatchingGame";
+
+const schemas = {
+  flashcards: flashcardSchemaList,
+  quiz: questionsSchema,
+  matchingGame: matchingPairSchemaList,
+};
 
 export default function ChatWithFiles() {
   const [files, setFiles] = useState<File[]>([]);
   const [questions, setQuestions] = useState<z.infer<typeof questionsSchema>>(
-    [],
+    []
   );
+  const [cards, setCards] = useState<z.infer<typeof flashcardSchemaList>>([]);
+  const [pairs, setPairs] = useState<z.infer<typeof matchingPairSchemaList>>(
+    []
+  );
+
   const [isDragging, setIsDragging] = useState(false);
   const [title, setTitle] = useState<string>();
+  const [selectedType, setSelectedType] = useState<
+    "quiz" | "flashcards" | "matchingGame"
+  >("quiz");
 
   const {
     submit,
@@ -37,32 +58,46 @@ export default function ChatWithFiles() {
     isLoading,
   } = experimental_useObject({
     api: "/api/generate-quiz",
-    schema: questionsSchema,
+    schema: schemas[selectedType as "quiz"],
     initialValue: undefined,
     onError: (error) => {
       toast.error("Failed to generate quiz. Please try again.");
+      console.log(error);
       setFiles([]);
     },
     onFinish: ({ object }) => {
-      setQuestions(object ?? []);
+      console.log(object);
+      if (selectedType === "quiz") {
+        setQuestions(object ?? []);
+      } else if (selectedType === "flashcards") {
+        setCards(
+          (object ?? []) as unknown as z.infer<typeof flashcardSchemaList>
+        );
+      } else {
+        setPairs(
+          (object ?? []) as unknown as z.infer<typeof matchingPairSchemaList>
+        );
+      }
     },
   });
+
+  const totalLength =
+    selectedType === "quiz" ? 4 : selectedType === "matchingGame" ? 8 : 10;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
     if (isSafari && isDragging) {
       toast.error(
-        "Safari does not support drag & drop. Please use the file picker.",
+        "Safari does not support drag & drop. Please use the file picker."
       );
       return;
     }
 
     const selectedFiles = Array.from(e.target.files || []);
     const validFiles = selectedFiles.filter(
-      (file) => file.type === "application/pdf" && file.size <= 5 * 1024 * 1024,
+      (file) => file.type === "application/pdf" && file.size <= 5 * 1024 * 1024
     );
-    console.log(validFiles);
 
     if (validFiles.length !== selectedFiles.length) {
       toast.error("Only PDF files under 5MB are allowed.");
@@ -87,10 +122,13 @@ export default function ChatWithFiles() {
         name: file.name,
         type: file.type,
         data: await encodeFileAsBase64(file),
-      })),
+      }))
     );
-    submit({ files: encodedFiles });
-    const generatedTitle = await generateQuizTitle(encodedFiles[0].name);
+    submit({ files: encodedFiles, type: selectedType });
+    const generatedTitle = await generateQuizTitle(
+      encodedFiles[0].name,
+      selectedType
+    );
     setTitle(generatedTitle);
   };
 
@@ -99,7 +137,22 @@ export default function ChatWithFiles() {
     setQuestions([]);
   };
 
-  const progress = partialQuestions ? (partialQuestions.length / 4) * 100 : 0;
+  const getTypeTitle = () => {
+    switch (selectedType) {
+      case "quiz":
+        return "Quiz";
+      case "flashcards":
+        return "Flashcards";
+      case "matchingGame":
+        return "Matching Game";
+      default:
+        return "Quiz";
+    }
+  };
+
+  const progress = partialQuestions
+    ? (partialQuestions.length / totalLength) * 100
+    : 0;
 
   if (questions.length === 4) {
     return (
@@ -107,9 +160,30 @@ export default function ChatWithFiles() {
     );
   }
 
+  const handleReset = () => {
+    setCards([]);
+    setPairs([]);
+    clearPDF();
+  };
+
+  if (cards.length === 10) {
+    return (
+      <Flashcards
+        title={title ?? "Flashcards"}
+        data={cards}
+        handleReset={handleReset}
+      />
+    );
+  }
+
+  if (pairs.length === 8) {
+    return <MatchingGame handleReset={handleReset} pairs={pairs} />;
+  }
+  const typeTitle = getTypeTitle();
+
   return (
     <div
-      className="min-h-[100dvh] w-full flex justify-center"
+      className='min-h-[100dvh] w-full flex justify-center'
       onDragOver={(e) => {
         e.preventDefault();
         setIsDragging(true);
@@ -129,37 +203,37 @@ export default function ChatWithFiles() {
       <AnimatePresence>
         {isDragging && (
           <motion.div
-            className="fixed pointer-events-none dark:bg-zinc-900/90 h-dvh w-dvw z-10 justify-center items-center flex flex-col gap-1 bg-zinc-100/90"
+            className='fixed pointer-events-none dark:bg-zinc-900/90 h-dvh w-dvw z-10 justify-center items-center flex flex-col gap-1 bg-zinc-100/90'
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
             <div>Drag and drop files here</div>
-            <div className="text-sm dark:text-zinc-400 text-zinc-500">
+            <div className='text-sm dark:text-zinc-400 text-zinc-500'>
               {"(PDFs only)"}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-      <Card className="w-full max-w-md h-full border-0 sm:border sm:h-fit mt-12">
-        <CardHeader className="text-center space-y-6">
-          <div className="mx-auto flex items-center justify-center space-x-2 text-muted-foreground">
-            <div className="rounded-full bg-primary/10 p-2">
-              <FileUp className="h-6 w-6" />
+      <Card className='w-full max-w-md h-full border-0 sm:border sm:h-fit mt-12'>
+        <CardHeader className='text-center space-y-6'>
+          <div className='mx-auto flex items-center justify-center space-x-2 text-muted-foreground'>
+            <div className='rounded-full bg-primary/10 p-2'>
+              <FileUp className='h-6 w-6' />
             </div>
-            <Plus className="h-4 w-4" />
-            <div className="rounded-full bg-primary/10 p-2">
-              <Loader2 className="h-6 w-6" />
+            <Plus className='h-4 w-4' />
+            <div className='rounded-full bg-primary/10 p-2'>
+              <Loader2 className='h-6 w-6' />
             </div>
           </div>
-          <div className="space-y-2">
-            <CardTitle className="text-2xl font-bold">
-              PDF Quiz Generator
+          <div className='space-y-2'>
+            <CardTitle className='text-2xl capitalize font-bold'>
+              PDF {typeTitle} Generator
             </CardTitle>
-            <CardDescription className="text-base">
+            <CardDescription className='text-base'>
               Upload a PDF to generate an interactive quiz based on its content
-              using the <Link href="https://sdk.vercel.ai">AI SDK</Link> and{" "}
-              <Link href="https://sdk.vercel.ai/providers/ai-sdk-providers/google-generative-ai">
+              using the <Link href='https://sdk.vercel.ai'>AI SDK</Link> and{" "}
+              <Link href='https://sdk.vercel.ai/providers/ai-sdk-providers/google-generative-ai'>
                 Google&apos;s Gemini Pro
               </Link>
               .
@@ -167,20 +241,20 @@ export default function ChatWithFiles() {
           </div>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmitWithFiles} className="space-y-4">
+          <form onSubmit={handleSubmitWithFiles} className='space-y-4'>
             <div
               className={`relative flex flex-col items-center justify-center border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 transition-colors hover:border-muted-foreground/50`}
             >
               <input
-                type="file"
+                type='file'
                 onChange={handleFileChange}
-                accept="application/pdf"
-                className="absolute inset-0 opacity-0 cursor-pointer"
+                accept='application/pdf'
+                className='absolute inset-0 opacity-0 cursor-pointer'
               />
-              <FileUp className="h-8 w-8 mb-2 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground text-center">
+              <FileUp className='h-8 w-8 mb-2 text-muted-foreground' />
+              <p className='text-sm text-muted-foreground text-center'>
                 {files.length > 0 ? (
-                  <span className="font-medium text-foreground">
+                  <span className='font-medium text-foreground'>
                     {files[0].name}
                   </span>
                 ) : (
@@ -188,41 +262,81 @@ export default function ChatWithFiles() {
                 )}
               </p>
             </div>
+            <Tabs.Root
+              className='w-full max-w-max mx-auto'
+              defaultValue='quiz'
+              onValueChange={(value) => setSelectedType(value as "quiz")}
+            >
+              <Tabs.List className='flex space-x-2 border-b border-muted-foreground'>
+                <Tabs.Trigger
+                  className={`px-4 py-2 text-sm font-medium ${
+                    selectedType === "quiz"
+                      ? "border-b-2 border-primary"
+                      : "text-muted-foreground"
+                  }`}
+                  value='quiz'
+                >
+                  Quiz
+                </Tabs.Trigger>
+                <Tabs.Trigger
+                  className={`px-4 py-2 text-sm font-medium ${
+                    selectedType === "flashcards"
+                      ? "border-b-2 border-primary"
+                      : "text-muted-foreground"
+                  }`}
+                  value='flashcards'
+                >
+                  Flashcards
+                </Tabs.Trigger>
+                <Tabs.Trigger
+                  className={`px-4 py-2 text-sm font-medium ${
+                    selectedType === "matchingGame"
+                      ? "border-b-2 border-primary"
+                      : "text-muted-foreground"
+                  }`}
+                  value='matchingGame'
+                >
+                  Matching Game
+                </Tabs.Trigger>
+              </Tabs.List>
+            </Tabs.Root>
             <Button
-              type="submit"
-              className="w-full"
+              type='submit'
+              className='w-full capitalize'
               disabled={files.length === 0}
             >
               {isLoading ? (
-                <span className="flex items-center space-x-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Generating Quiz...</span>
+                <span className='flex items-center space-x-2'>
+                  <Loader2 className='h-4 w-4 animate-spin' />
+                  <span className='capitalize'>Generating {typeTitle}...</span>
                 </span>
               ) : (
-                "Generate Quiz"
+                "Generate " + typeTitle
               )}
             </Button>
           </form>
         </CardContent>
         {isLoading && (
-          <CardFooter className="flex flex-col space-y-4">
-            <div className="w-full space-y-1">
-              <div className="flex justify-between text-sm text-muted-foreground">
+          <CardFooter className='flex flex-col space-y-4'>
+            <div className='w-full space-y-1'>
+              <div className='flex justify-between text-sm text-muted-foreground'>
                 <span>Progress</span>
                 <span>{Math.round(progress)}%</span>
               </div>
-              <Progress value={progress} className="h-2" />
+              <Progress value={progress} className='h-2' />
             </div>
-            <div className="w-full space-y-2">
-              <div className="grid grid-cols-6 sm:grid-cols-4 items-center space-x-2 text-sm">
+            <div className='w-full space-y-2'>
+              <div className='grid grid-cols-6 sm:grid-cols-4 items-center space-x-2 text-sm'>
                 <div
                   className={`h-2 w-2 rounded-full ${
                     isLoading ? "bg-yellow-500/50 animate-pulse" : "bg-muted"
                   }`}
                 />
-                <span className="text-muted-foreground text-center col-span-4 sm:col-span-2">
+                <span className='text-muted-foreground text-center col-span-4 sm:col-span-2'>
                   {partialQuestions
-                    ? `Generating question ${partialQuestions.length + 1} of 4`
+                    ? `Generating question ${
+                        partialQuestions.length + 1
+                      } of ${totalLength}`
                     : "Analyzing PDF content"}
                 </span>
               </div>
@@ -231,23 +345,23 @@ export default function ChatWithFiles() {
         )}
       </Card>
       <motion.div
-        className="flex flex-row gap-4 items-center justify-between fixed bottom-6 text-xs "
+        className='flex flex-row gap-4 items-center justify-between fixed bottom-6 text-xs '
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
       >
         <NextLink
-          target="_blank"
-          href="https://github.com/vercel-labs/ai-sdk-preview-pdf-support"
-          className="flex flex-row gap-2 items-center border px-2 py-1.5 rounded-md hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
+          target='_blank'
+          href='https://github.com/vercel-labs/ai-sdk-preview-pdf-support'
+          className='flex flex-row gap-2 items-center border px-2 py-1.5 rounded-md hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800'
         >
           <GitIcon />
           View Source Code
         </NextLink>
 
         <NextLink
-          target="_blank"
-          href="https://vercel.com/templates/next.js/ai-quiz-generator"
-          className="flex flex-row gap-2 items-center bg-zinc-900 px-2 py-1.5 rounded-md text-zinc-50 hover:bg-zinc-950 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-50"
+          target='_blank'
+          href='https://vercel.com/templates/next.js/ai-quiz-generator'
+          className='flex flex-row gap-2 items-center bg-zinc-900 px-2 py-1.5 rounded-md text-zinc-50 hover:bg-zinc-950 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-50'
         >
           <VercelIcon size={14} />
           Deploy with Vercel
