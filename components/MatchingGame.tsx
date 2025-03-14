@@ -22,7 +22,7 @@ export default function MatchingGame({
   const [mismatch, setMismatch] = useState(false);
 
   const isDone = shuffledItems.length === matched.length;
-  const totalProgress = (matched.length / pairs.length) * 100;
+  const totalProgress = (matched.length / shuffledItems.length) * 100;
 
   useEffect(() => {
     const shuffled = [
