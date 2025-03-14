@@ -64,6 +64,16 @@ export default function MatchingGame({
     }
   };
 
+  const getClassesState = (item: string) => {
+    return matched.includes(item)
+      ? "bg-green-500 text-white"
+      : mismatch && selected.includes(item)
+      ? "bg-red-500 text-white"
+      : selected.includes(item)
+      ? "bg-orange-500 text-white"
+      : "bg-black text-white";
+  };
+
   return (
     <div className='flex flex-col max-w-2xl mx-auto my-6 gap-6'>
       <h1 className='text-3xl font-bold'>Matching Game</h1>
@@ -78,15 +88,9 @@ export default function MatchingGame({
           {shuffledItems.map((item, index) => (
             <motion.div
               key={index}
-              className={`p-4 text-base border text-center flex items-center justify-center col-span-1 h-full line-clamp-2 break-words aspect-square rounded-lg transition-all ${
-                matched.includes(item)
-                  ? "bg-green-500 text-white"
-                  : mismatch && selected.includes(item)
-                  ? "bg-red-500 text-white"
-                  : selected.includes(item)
-                  ? "bg-orange-500 text-white"
-                  : "bg-black text-white"
-              }`}
+              className={`p-4 text-base border text-center flex items-center justify-center col-span-1 h-full line-clamp-2 break-words aspect-square rounded-lg transition-all ${getClassesState(
+                item
+              )}`}
               onClick={() => {
                 if (matched.includes(item)) return;
                 handleSelect(item);
